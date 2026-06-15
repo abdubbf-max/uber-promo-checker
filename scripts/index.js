@@ -205,17 +205,6 @@ async function checkAccount(email, password, totpKey) {
       await sleep(2500);
       await shot('4_after_pwd_choice');
       await logPage('4-after-pwd-choice');
-      // Si encore un bouton "Login with password" apparaît, cliquer
-      const btn2 = await clickPwdBtn();
-      const box2 = await btn2.boundingBox().catch(() => null);
-      if (box2) {
-        const l2 = await page.evaluate(el => el?.textContent?.trim(), btn2);
-        console.log(`  2e bouton password: "${l2}"`);
-        await page.mouse.click(box2.x + box2.width / 2, box2.y + box2.height / 2);
-        await sleep(2000);
-        await shot('5_after_pwd2');
-        await logPage('5-after-pwd2');
-      }
     } else {
       console.log('  Aucun bouton password exact trouvé');
     }

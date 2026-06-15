@@ -136,11 +136,39 @@ async function checkAccount(email, password, totpKey, cookies) {
       }
       await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
       await sleep(8000);
-      await shot('promos_cookie_mode');
       const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 200) || '').catch(() => '');
       const loggedIn = !pageText.includes('Inscription') && !pageText.includes('Connexion');
       console.log(`  Connecté: ${loggedIn ? 'OUI' : 'NON'}`);
-      if (!loggedIn) console.log(`  Page: ${pageText.replace(/\n/g,' ').substring(0, 100)}`);
+      if (!loggedIn) { console.log(`  Page: ${pageText.replace(/\n/g,' ').substring(0, 100)}`); }
+
+      if (loggedIn) {
+        // Probing direct des endpoints promos
+        const probeResult = await page.evaluate(async () => {
+          const csrfToken = document.cookie.match(/x-csrf-token=([^;]+)/)?.[1] || 'x';
+          const apis = ['getEaterOffersV1','getPersonalizedPromotionsV1','getOfferFeedV1',
+                        'getUserPromotionsV1','getRewardsV1','getPromoFeedV1',
+                        'getMemberOffersV1','getEaterIncentivesV1','getWalletV1',
+                        'getCreditHistoryV1','getUserCreditsV1','getUberCashV1',
+                        'getEaterRewardsV1','getLoyaltyPointsV1','getVouchersV1'];
+          const out = {};
+          for (const api of apis) {
+            try {
+              const r = await fetch(`/_p/api/${api}`, {
+                method: 'POST', credentials: 'include',
+                headers: {'content-type':'application/json','x-csrf-token':csrfToken},
+                body: JSON.stringify({})
+              });
+              const t = await r.text();
+              out[api] = { s: r.status, b: t.substring(0, 150) };
+            } catch (e) { out[api] = { err: e.message }; }
+          }
+          return out;
+        });
+        for (const [api, res] of Object.entries(probeResult)) {
+          const tag = res.s === 200 ? '✓' : '✗';
+          console.log(`  ${tag} ${api}: ${res.s || ''} ${(res.b || res.err || '').substring(0, 120)}`);
+        }
+      }
     }
 
     // =====================================================================

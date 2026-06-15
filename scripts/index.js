@@ -411,8 +411,17 @@ async function checkAccount(email, password, totpKey, cookies) {
 }
 
 async function main() {
-  const raw = process.env.ACCOUNTS_JSON;
-  if (!raw) { console.error('ACCOUNTS_JSON non défini'); process.exit(1); }
+  // Support local-config.json en plus de ACCOUNTS_JSON env var
+  let raw = process.env.ACCOUNTS_JSON;
+  if (!raw) {
+    const localCfg = path.join(__dirname, '..', 'local-config.json');
+    if (fs.existsSync(localCfg)) {
+      raw = fs.readFileSync(localCfg, 'utf8');
+      console.log('Config locale chargée depuis local-config.json');
+    } else {
+      console.error('ACCOUNTS_JSON non défini et local-config.json introuvable'); process.exit(1);
+    }
+  }
 
   let accounts;
   try { accounts = JSON.parse(raw); }

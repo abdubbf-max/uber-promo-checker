@@ -48,12 +48,32 @@ async function scrapePromosDom(page) {
   });
 }
 
+// Chemin vers Chrome installé (Windows) ou variable d'env CHROME_PATH
+const CHROME_PATHS = [
+  process.env.CHROME_PATH,
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+].filter(Boolean);
+
+function findChrome() {
+  const fs2 = require('fs');
+  for (const p of CHROME_PATHS) { try { if (fs2.existsSync(p)) return p; } catch(_){} }
+  return null; // laisse puppeteer chercher lui-même
+}
+
 async function checkAccount(email, password, totpKey, cookies) {
-  const browser = await puppeteer.launch({
+  const chromePath = findChrome();
+  const launchOpts = {
     headless: 'new',
     args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
     timeout: 60000
-  });
+  };
+  if (chromePath) {
+    launchOpts.executablePath = chromePath;
+    console.log(`[chrome] Utilise: ${chromePath}`);
+  }
+  const browser = await puppeteer.launch(launchOpts);
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
   await page.setViewport({ width: 1280, height: 800 });

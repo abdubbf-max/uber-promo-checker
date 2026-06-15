@@ -14,14 +14,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Installer les dependances si necessaire
-if not exist "scripts\node_modules" (
-    echo Installation des dependances...
-    cd scripts
-    npm install
-    cd ..
-    echo.
-)
+:: Installer / verifier les dependances
+echo Installation des dependances...
+cd scripts
+set PUPPETEER_SKIP_DOWNLOAD=1
+npm install --silent
+cd ..
+echo.
 
 :: Demarrer le serveur de sync en arriere-plan (si pas deja actif)
 echo Demarrage du serveur sync (port 3001)...

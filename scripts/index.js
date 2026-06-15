@@ -110,16 +110,23 @@ async function checkAccount(email, password, totpKey, cookies) {
     // MODE A : Cookie injection (bypass login)
     // =====================================================================
     if (cookies && cookies.length > 0) {
+      // CF base cookies d'abord
+      if (process.env.CF_BASE_COOKIES) {
+        try {
+          const cfRaw = process.env.CF_BASE_COOKIES.replace(/^﻿/, '').trim();
+          for (const c of JSON.parse(cfRaw)) await page.setCookie(c).catch(() => {});
+        } catch (_) {}
+      }
       console.log(`  Mode cookies: injection de ${cookies.length} cookie(s)`);
       for (const c of cookies) {
         await page.setCookie({
           name: c.name,
           value: c.value,
-          domain: c.domain || 'www.ubereats.com',
+          domain: c.domain || '.ubereats.com',
           path: c.path || '/',
           httpOnly: !!c.httpOnly,
           secure: c.secure !== false,
-          sameSite: c.sameSite || 'Lax'
+          sameSite: c.sameSite || 'None'
         }).catch(e => console.log(`  setCookie error: ${c.name} - ${e.message}`));
       }
       await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
@@ -345,6 +352,20 @@ async function main() {
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
     console.error('ACCOUNTS_JSON doit être un tableau non vide'); process.exit(1);
+  }
+
+  // Merger les cookies depuis COOKIES_JSON (par email)
+  if (process.env.COOKIES_JSON) {
+    try {
+      const cRaw = process.env.COOKIES_JSON.replace(/^﻿/, '').trim();
+      const cookiesMap = JSON.parse(cRaw);
+      for (const acc of accounts) {
+        if (!acc.cookies && cookiesMap[acc.email]) {
+          acc.cookies = cookiesMap[acc.email];
+          console.log(`  Cookies depuis COOKIES_JSON: ${acc.email}`);
+        }
+      }
+    } catch (e) { console.log(`COOKIES_JSON erreur: ${e.message}`); }
   }
 
   console.log(`Vérification de ${accounts.length} compte(s)...\n`);

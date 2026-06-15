@@ -32,12 +32,17 @@ jobs:
         env:
           ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
           CF_BASE_COOKIES: ${{ secrets.CF_BASE_COOKIES }}
+          COOKIES_JSON: ${{ secrets.COOKIES_JSON }}
 
       - name: Commit results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add promos.json debug/ 2>/dev/null || git add promos.json
+          git add promos.json
+          git diff --staged --quiet && echo "Aucun changement" || (
+            git pull --rebase origin main
+            git push
+          )
           git diff --staged --quiet && echo "Aucun changement" || (
             git commit -m "promos: update $(date -u '+%Y-%m-%d %H:%M') UTC"
             git push

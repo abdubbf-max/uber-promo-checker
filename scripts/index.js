@@ -1,6 +1,4 @@
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
+const puppeteer = require('puppeteer');
 const { TOTP, Secret } = require('otpauth');
 const fs   = require('fs');
 const path = require('path');
@@ -266,26 +264,39 @@ async function checkAccount(email, password, totpKey) {
 
     // Étape TOTP si nécessaire
     if (totpKey) {
-      const hasTOTP = await page.evaluate(() =>
-        document.querySelector('input[maxlength="1"], input[maxlength="6"], input[inputmode="numeric"]') !== null
-      );
-      if (hasTOTP) {
-        console.log('  TOTP détecté');
-        const code = genTotp(totpKey);
-        if (code) {
-          const singles = await page.$$('input[maxlength="1"]');
-          if (singles.length >= 6) {
-            for (let i = 0; i < 6; i++) await singles[i].type(code[i], { delay: 80 });
-          } else {
-            const inp = await page.$('input[maxlength="6"], input[inputmode="numeric"]');
-            if (inp) { await inp.click({ clickCount: 3 }); await inp.type(code, { delay: 80 }); }
+      try {
+        const hasTOTP = await page.evaluate(() =>
+          document.querySelector('input[maxlength="1"], input[maxlength="6"], input[inputmode="numeric"]') !== null
+        ).catch(() => false);
+        if (hasTOTP) {
+          console.log('  TOTP détecté');
+          const code = genTotp(totpKey);
+          if (code) {
+            console.log(`  Code TOTP: ${code}`);
+            try {
+              const singles = await page.$$('input[maxlength="1"]');
+              if (singles.length >= 6) {
+                for (let i = 0; i < 6; i++) await singles[i].type(code[i], { delay: 80 });
+              } else {
+                const inp = await page.$('input[maxlength="6"], input[inputmode="numeric"]');
+                if (inp) { await inp.click({ clickCount: 3 }); await inp.type(code, { delay: 80 }); }
+              }
+            } catch (e) { console.log(`  TOTP input error: ${e.message}`); }
+            await sleep(800);
+            try {
+              await Promise.all([
+                page.waitForNavigation({ timeout: 15000, waitUntil: 'domcontentloaded' }),
+                page.evaluate(() => {
+                  const btn = document.querySelector('button[type="submit"]') ||
+                              [...document.querySelectorAll('button')].find(b => /next|suivant|continuer/i.test(b.textContent));
+                  if (btn) btn.click();
+                })
+              ]);
+            } catch (_) {}
+            console.log(`  URL apres TOTP: ${page.url()}`);
           }
-          await sleep(1500);
-          await page.evaluate(() => document.querySelector('button[type="submit"]')?.click());
-          await sleep(4000);
-          console.log(`  URL apres TOTP: ${page.url()}`);
         }
-      }
+      } catch (e) { console.log(`  TOTP section error: ${e.message}`); }
     }
 
     // Attendre retour sur ubereats.com

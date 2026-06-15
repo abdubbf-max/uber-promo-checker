@@ -32,11 +32,11 @@ jobs:
         env:
           ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
 
-      - name: Commit promos.json
+      - name: Commit results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add promos.json
+          git add promos.json debug/ 2>/dev/null || git add promos.json
           git diff --staged --quiet && echo "Aucun changement" || (
             git commit -m "promos: update $(date -u '+%Y-%m-%d %H:%M') UTC"
             git push

@@ -82,12 +82,33 @@ async function checkAccount(email, password, totpKey) {
   });
 
   try {
+    const debugDir = path.join(__dirname, '..', 'debug');
+    if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+    const shot = async (name) => {
+      try {
+        await page.screenshot({ path: path.join(debugDir, `${email.split('@')[0]}_${name}.png`), fullPage: true });
+      } catch (_) {}
+    };
+    const logPage = async (step) => {
+      const url = page.url();
+      const btns = await page.evaluate(() =>
+        [...document.querySelectorAll('button,[role="button"]')].map(b => b.textContent?.trim()).filter(t => t && t.length < 60)
+      );
+      const inputs = await page.evaluate(() =>
+        [...document.querySelectorAll('input')].map(i => `${i.type}[name=${i.name}][id=${i.id}]`)
+      );
+      console.log(`  [${step}] URL: ${url}`);
+      console.log(`  [${step}] Inputs: ${inputs.slice(0,5).join(' | ')}`);
+      console.log(`  [${step}] Buttons: ${btns.slice(0,5).join(' | ')}`);
+    };
+
     // Aller directement sur auth.uber.com (plus fiable que passer par ubereats.com)
     const authUrl = 'https://auth.uber.com/v2/?next_url=https%3A%2F%2Fwww.ubereats.com%2Ffr%2Fpromotions&locale=fr-FR';
     console.log(`  -> ${authUrl}`);
     await page.goto(authUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await sleep(2000);
-    console.log(`  URL: ${page.url()}`);
+    await shot('1_auth_page');
+    await logPage('1-auth');
 
     // Étape email
     const emailSelectors = [
@@ -116,35 +137,48 @@ async function checkAccount(email, password, totpKey) {
 
     await emailInput.click({ clickCount: 3 });
     await emailInput.type(email, { delay: 50 });
-    await sleep(500);
-    await clickContinue(page);
-    console.log('  Email soumis, attente...');
-    await sleep(3000);
-    console.log(`  URL apres email: ${page.url()}`);
+    await sleep(300);
 
-    // Uber peut afficher une page de choix de méthode (mot de passe / magic link / etc.)
-    // Chercher et cliquer sur "Continuer avec mot de passe" ou équivalent
+    // Soumettre via Enter (plus fiable sur les SPA React que cliquer un bouton)
+    await page.keyboard.press('Enter');
+    console.log('  Email soumis (Enter), attente DOM...');
+
+    // Attendre que quelque chose change : champ password OU boutons de choix de méthode
+    await page.waitForFunction(() => {
+      const hasPwd = !!document.querySelector('input[type="password"]');
+      const hasChoice = [...document.querySelectorAll('button,[role="button"]')].some(b =>
+        /mot de passe|password|magic link|continuer avec/i.test(b.textContent || '')
+      );
+      const emailGone = !document.querySelector('input[type="email"]');
+      return hasPwd || hasChoice || emailGone;
+    }, { timeout: 15000 }).catch(() => {});
+    await sleep(1500);
+    await shot('2_after_email');
+    await logPage('2-after-email');
+
+    // Si page de choix de méthode : cliquer "mot de passe"
     const clickedPasswordOption = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('button,a,[role="button"]')];
+      const all = [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"]')];
       const btn = all.find(el => {
         const t = (el.textContent || '').toLowerCase();
-        return t.includes('mot de passe') || t.includes('password') || t.includes('continuer avec') || t.includes('use password');
+        return t.includes('mot de passe') || t.includes('password') || t.includes('use password');
       });
-      if (btn) { btn.click(); return true; }
-      return false;
+      if (btn) { btn.click(); return (btn.textContent || '').trim(); }
+      return null;
     });
     if (clickedPasswordOption) {
-      console.log('  Option "mot de passe" cliquée');
+      console.log(`  Option cliquée: "${clickedPasswordOption}"`);
       await sleep(2500);
-      console.log(`  URL apres choix: ${page.url()}`);
+      await shot('3_after_pwd_choice');
+      await logPage('3-after-pwd-choice');
     }
 
     // Attendre le champ mot de passe
     await page.waitForFunction(
-      () => document.querySelector('input[type="password"]') !== null,
+      () => !!document.querySelector('input[type="password"]'),
       { timeout: 12000 }
     ).catch(() => {});
-    await sleep(1000);
+    await sleep(500);
 
     // Étape mot de passe
     const pwdSelectors = [
@@ -162,11 +196,12 @@ async function checkAccount(email, password, totpKey) {
 
     await pwdInput.click({ clickCount: 3 });
     await pwdInput.type(password, { delay: 50 });
-    await sleep(500);
-    await clickContinue(page);
-    console.log('  Mot de passe soumis...');
+    await sleep(300);
+    await page.keyboard.press('Enter');
+    console.log('  Mot de passe soumis (Enter)...');
     await sleep(4000);
-    console.log(`  URL apres mdp: ${page.url()}`);
+    await shot('4_after_password');
+    await logPage('4-after-password');
 
     // Étape TOTP si nécessaire
     if (totpKey) {

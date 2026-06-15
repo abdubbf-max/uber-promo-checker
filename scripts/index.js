@@ -3,7 +3,6 @@ const { TOTP, Secret } = require('otpauth');
 const fs   = require('fs');
 const path = require('path');
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function genTotp(key) {
@@ -11,8 +10,7 @@ function genTotp(key) {
   try {
     return new TOTP({ secret: Secret.fromBase32(key.toUpperCase().replace(/\s/g,'')), digits: 6, period: 30 }).generate();
   } catch (_) {
-    try { return new TOTP({ secret: key, digits: 6, period: 30 }).generate(); }
-    catch (__) { return null; }
+    try { return new TOTP({ secret: key, digits: 6, period: 30 }).generate(); } catch (__) { return null; }
   }
 }
 
@@ -24,7 +22,16 @@ function dedup(list) {
   });
 }
 
-// ── Login + scrape promotions for one account ──────────────────────────────
+async function clickContinue(page) {
+  return page.evaluate(() => {
+    const btns = [...document.querySelectorAll('button')];
+    const b = btns.find(b => /continuer|suivant|next|continue/i.test((b.textContent||'').trim()))
+           || document.querySelector('button[type="submit"]');
+    if (b) { b.click(); return true; }
+    return false;
+  });
+}
+
 async function checkAccount(email, password, totpKey) {
   const browser = await puppeteer.launch({
     headless: 'new',
@@ -38,7 +45,6 @@ async function checkAccount(email, password, totpKey) {
   const capturedPromos = [];
   const capturedEps    = [];
 
-  // Intercept TOUTES les réponses /_p/api/ (comme notre hook fetch, mais natif Puppeteer)
   page.on('response', async (resp) => {
     const url = resp.url();
     if (!url.includes('/_p/api/')) return;
@@ -48,7 +54,6 @@ async function checkAccount(email, password, totpKey) {
       const ep = url.split('/_p/api/')[1]?.split('?')[0] || '';
       capturedEps.push(ep);
       const d = body.data;
-
       const fields = ['offers','activeOffers','vouchers','coupons','promotions','items',
                       'rewards','userOffers','eatsOffers','discounts','userRewards',
                       'promos','deals','incentives','eatsPromotions','userPromotions'];
@@ -58,15 +63,13 @@ async function checkAccount(email, password, totpKey) {
           const title = it.title || it.name || it.heading || it.code || it.headerText;
           if (!title) continue;
           capturedPromos.push({
-            type: 'offer',
-            title,
+            type: 'offer', title,
             value: it.discount?.formattedValue || it.subtitleText || it.formattedDiscount
                    || it.formattedAmount || it.description || '',
             expiresAt: it.expiresAt || it.expiry || it.validUntil || it.endDate || ''
           });
         }
       }
-      // Uber Cash
       const bal = d.walletBalance || d.balance || d.uberCash;
       if (bal && typeof bal.amount === 'number' && bal.amount > 0) {
         capturedPromos.push({
@@ -79,76 +82,115 @@ async function checkAccount(email, password, totpKey) {
   });
 
   try {
-    // ── Étape 1 : Accueil UberEats ──────────────────────────────────────────
-    await page.goto('https://www.ubereats.com/fr/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await sleep(2500);
+    // Aller directement sur auth.uber.com (plus fiable que passer par ubereats.com)
+    const authUrl = 'https://auth.uber.com/v2/?next_url=https%3A%2F%2Fwww.ubereats.com%2Ffr%2Fpromotions&locale=fr-FR';
+    console.log(`  -> ${authUrl}`);
+    await page.goto(authUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(2000);
+    console.log(`  URL: ${page.url()}`);
 
-    // ── Étape 2 : Ouvrir la modale de connexion ─────────────────────────────
-    const opened = await page.evaluate(() => {
-      const candidates = [...document.querySelectorAll('a,button,[role="button"]')];
-      const btn = candidates.find(e => /se connecter|sign in|login|connexion/i.test((e.textContent||'').trim()));
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    if (opened) await sleep(2000);
-
-    // ── Étape 3 : Saisir email ──────────────────────────────────────────────
-    let emailInput = await page.$('input[type="email"], input[autocomplete="email"], input[name="email"]');
-    if (!emailInput) {
-      // Fallback : aller directement sur auth.uber.com
-      await page.goto('https://auth.uber.com/v2/?next_url=https%3A%2F%2Fwww.ubereats.com%2Ffr%2F', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await sleep(1500);
-      emailInput = await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 8000 }).catch(() => null);
+    // Étape email
+    const emailSelectors = [
+      'input[type="email"]',
+      'input[name="email"]',
+      'input[autocomplete="email"]',
+      'input[autocomplete="username"]',
+      'input[id*="email"]',
+    ];
+    let emailInput = null;
+    for (const sel of emailSelectors) {
+      emailInput = await page.$(sel);
+      if (emailInput) { console.log(`  Email input: ${sel}`); break; }
     }
-    if (!emailInput) throw new Error('Champ email introuvable');
-    await emailInput.click({ clickCount: 3 }); await emailInput.type(email, { delay: 40 });
+    if (!emailInput) {
+      // Chercher n'importe quel input visible
+      emailInput = await page.evaluateHandle(() => {
+        return [...document.querySelectorAll('input')].find(i =>
+          i.offsetParent !== null && i.type !== 'hidden' && i.type !== 'submit'
+        ) || null;
+      });
+      const isNull = await page.evaluate(el => el === null, emailInput);
+      if (isNull) throw new Error(`Champ email introuvable (URL: ${page.url()})`);
+      console.log('  Email input: fallback (premier input visible)');
+    }
 
-    // Soumettre
-    await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(b => /continuer|suivant|next|continue/i.test(b.textContent));
-      if (b) b.click(); else document.querySelector('button[type="submit"]')?.click();
-    });
-    await sleep(2500);
+    await emailInput.click({ clickCount: 3 });
+    await emailInput.type(email, { delay: 50 });
+    await sleep(500);
+    await clickContinue(page);
+    console.log('  Email soumis, attente page mot de passe...');
 
-    // ── Étape 4 : Saisir mot de passe ──────────────────────────────────────
-    const pwdInput = await page.waitForSelector('input[type="password"]', { timeout: 10000 }).catch(() => null);
-    if (!pwdInput) throw new Error('Champ mot de passe introuvable');
-    await pwdInput.click({ clickCount: 3 }); await pwdInput.type(password, { delay: 40 });
-    await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(b => /continuer|suivant|next|continue/i.test(b.textContent));
-      if (b) b.click(); else document.querySelector('button[type="submit"]')?.click();
-    });
-    await sleep(3500);
+    // Attendre navigation vers page mot de passe
+    await page.waitForFunction(
+      () => document.querySelector('input[type="password"]') !== null
+         || window.location.href.includes('password'),
+      { timeout: 15000 }
+    ).catch(() => {});
+    await sleep(1500);
+    console.log(`  URL apres email: ${page.url()}`);
 
-    // ── Étape 5 : TOTP si nécessaire ────────────────────────────────────────
+    // Étape mot de passe
+    const pwdSelectors = [
+      'input[type="password"]',
+      'input[name="password"]',
+      'input[autocomplete="current-password"]',
+      'input[id*="password"]',
+    ];
+    let pwdInput = null;
+    for (const sel of pwdSelectors) {
+      pwdInput = await page.$(sel);
+      if (pwdInput) { console.log(`  Password input: ${sel}`); break; }
+    }
+    if (!pwdInput) throw new Error(`Champ mot de passe introuvable (URL: ${page.url()})`);
+
+    await pwdInput.click({ clickCount: 3 });
+    await pwdInput.type(password, { delay: 50 });
+    await sleep(500);
+    await clickContinue(page);
+    console.log('  Mot de passe soumis...');
+    await sleep(4000);
+    console.log(`  URL apres mdp: ${page.url()}`);
+
+    // Étape TOTP si nécessaire
     if (totpKey) {
-      const code = genTotp(totpKey);
-      if (code) {
-        const singles = await page.$$('input[maxlength="1"]');
-        if (singles.length >= 6) {
-          for (let i = 0; i < 6; i++) await singles[i].type(code[i], { delay: 60 });
-        } else {
-          const inp = await page.$('input[maxlength="6"], input[inputmode="numeric"][type="tel"], input[inputmode="numeric"][type="text"]');
-          if (inp) { await inp.click({ clickCount: 3 }); await inp.type(code, { delay: 60 }); }
+      const hasTOTP = await page.evaluate(() =>
+        document.querySelector('input[maxlength="1"], input[maxlength="6"], input[inputmode="numeric"]') !== null
+      );
+      if (hasTOTP) {
+        console.log('  TOTP détecté');
+        const code = genTotp(totpKey);
+        if (code) {
+          const singles = await page.$$('input[maxlength="1"]');
+          if (singles.length >= 6) {
+            for (let i = 0; i < 6; i++) await singles[i].type(code[i], { delay: 80 });
+          } else {
+            const inp = await page.$('input[maxlength="6"], input[inputmode="numeric"]');
+            if (inp) { await inp.click({ clickCount: 3 }); await inp.type(code, { delay: 80 }); }
+          }
+          await sleep(1500);
+          await page.evaluate(() => document.querySelector('button[type="submit"]')?.click());
+          await sleep(4000);
+          console.log(`  URL apres TOTP: ${page.url()}`);
         }
-        await sleep(2000);
-        await page.evaluate(() => document.querySelector('button[type="submit"]')?.click());
-        await sleep(3000);
       }
     }
 
-    // ── Étape 6 : Attendre le retour sur ubereats.com ──────────────────────
+    // Attendre retour sur ubereats.com
     await page.waitForFunction(
-      () => window.location.hostname.includes('ubereats.com') && !window.location.hostname.includes('auth.uber'),
-      { timeout: 15000 }
+      () => window.location.hostname.includes('ubereats.com'),
+      { timeout: 20000 }
     ).catch(() => {});
-    console.log(`  URL apres login: ${page.url()}`);
+    console.log(`  URL finale: ${page.url()}`);
 
-    // ── Étape 7 : Page promotions (déclenche les appels API promo) ──────────
-    await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
+    // Si pas encore sur ubereats, naviguer manuellement
+    if (!page.url().includes('ubereats.com')) {
+      await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
+    } else if (!page.url().includes('/promotions')) {
+      await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
+    }
     await sleep(5000);
 
-    // ── Étape 8 : Scraping DOM (backup) ─────────────────────────────────────
+    // Scraping DOM
     const domPromos = await page.evaluate(() => {
       const results = [];
       const seen = new Set();
@@ -171,7 +213,7 @@ async function checkAccount(email, password, totpKey) {
     });
 
     const allPromos = dedup([...capturedPromos, ...domPromos]);
-    console.log(`  API (${capturedEps.length} endpoints): ${capturedPromos.length} | DOM: ${domPromos.length} | Total: ${allPromos.length}`);
+    console.log(`  API (${capturedEps.length} ep): ${capturedPromos.length} | DOM: ${domPromos.length} | Total: ${allPromos.length}`);
 
     await browser.close();
     return { ok: true, promos: allPromos, checkedAt: new Date().toISOString() };
@@ -183,7 +225,6 @@ async function checkAccount(email, password, totpKey) {
   }
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   const raw = process.env.ACCOUNTS_JSON;
   if (!raw) { console.error('ACCOUNTS_JSON non défini'); process.exit(1); }

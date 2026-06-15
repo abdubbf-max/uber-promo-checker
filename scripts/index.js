@@ -326,17 +326,12 @@ async function checkAccount(email, password, totpKey) {
     }
     const urlFin = page.url();
     const allCookies = await page.cookies().catch(() => []);
-    const sidCookie = allCookies.find(c => c.name === 'sid' || c.name === 'SID');
-    console.log(`  URL finale: ${urlFin}`);
-    console.log(`  Cookie sid: ${sidCookie ? 'OUI (' + sidCookie.domain + ')' : 'NON'} | Total cookies: ${allCookies.length}`);
+    console.log(`  URL après _sid wait: ${urlFin}`);
+    console.log(`  Cookies (${allCookies.length}): ${allCookies.map(c => `${c.name}=${c.value.substring(0,30)}`).join(' | ').substring(0, 400)}`);
 
-    // Si pas encore sur ubereats, naviguer manuellement
-    if (!page.url().includes('ubereats.com')) {
-      await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
-    } else if (!page.url().includes('/promotions')) {
-      await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
-    }
-    await sleep(8000);
+    // Forcer navigation propre vers /fr/promotions (sans _sid) pour que le SPA charge en état auth
+    await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(5000);
     await shot('6_promos_page');
 
     // Log page content for debug

@@ -142,6 +142,10 @@ async function checkAccount(email, password, totpKey, cookies) {
       if (!loggedIn) { console.log(`  Page: ${pageText.replace(/\n/g,' ').substring(0, 100)}`); }
 
       if (loggedIn) {
+        // Afficher le contenu de la page pour voir si des promos sont visibles
+        const fullText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+        console.log(`  PAGE TEXTE: ${fullText.replace(/\n+/g,' ').substring(0, 600)}`);
+
         // Probing direct des endpoints promos
         const probeResult = await page.evaluate(async () => {
           const csrfToken = document.cookie.match(/x-csrf-token=([^;]+)/)?.[1] || 'x';

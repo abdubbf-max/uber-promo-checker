@@ -142,9 +142,16 @@ async function checkAccount(email, password, totpKey, cookies) {
       if (!loggedIn) { console.log(`  Page: ${pageText.replace(/\n/g,' ').substring(0, 100)}`); }
 
       if (loggedIn) {
-        // Afficher le contenu de la page pour voir si des promos sont visibles
-        const fullText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
-        console.log(`  PAGE TEXTE: ${fullText.replace(/\n+/g,' ').substring(0, 600)}`);
+        // Essayer d'autres pages pour trouver les promos
+        for (const url of ['https://www.ubereats.com/fr/promotions','https://www.ubereats.com/fr/profile','https://www.ubereats.com/fr/home']) {
+          await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
+          await sleep(3000);
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+          await sleep(2000);
+          const t = await page.evaluate(() => document.body?.innerText?.replace(/\n+/g,' ') || '').catch(() => '');
+          console.log(`  [${url.split('/fr/')[1]}] ${t.substring(0, 200)}`);
+        }
+        await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
 
         // Probing direct des endpoints promos
         const probeResult = await page.evaluate(async () => {
@@ -344,19 +351,43 @@ async function checkAccount(email, password, totpKey, cookies) {
         } catch (e) { console.log(`  TOTP error: ${e.message}`); }
       }
 
-      // Attendre ubereats.com
+      // Attendre ubereats.com + tenter échange _sid manuel
       await page.waitForFunction(() => window.location.hostname.includes('ubereats.com'), { timeout: 20000 }).catch(() => {});
+      const sidUrl = page.url();
+      if (sidUrl.includes('_sid=')) {
+        const sidToken = new URL(sidUrl).searchParams.get('_sid');
+        console.log(`  _sid trouvé (${sidToken?.substring(0,20)}…), test échange manuel`);
+        const xr = await page.evaluate(async (sid) => {
+          const apis = ['verifyEaterSidV1','getEaterSessionV1','createEaterSessionV1',
+                        'exchangeSessionV1','verifySidV1','loginBySidV1','redeemSidV1',
+                        'activateSidV1','getSessionBySidV1','initEaterSessionV1'];
+          const out = {};
+          for (const api of apis) {
+            try {
+              const r = await fetch(`/_p/api/${api}`,{method:'POST',credentials:'include',
+                headers:{'content-type':'application/json','x-csrf-token':'x'},
+                body: JSON.stringify({sid, _sid: sid, sidToken: sid})
+              });
+              const t = await r.text();
+              out[api] = {s: r.status, b: t.substring(0, 100)};
+            } catch(e){out[api]={err:e.message};}
+          }
+          return out;
+        }, sidToken);
+        for (const [api, res] of Object.entries(xr)) {
+          if (res.s !== 404) console.log(`  SID-EXCHANGE ${api}: ${res.s} ${(res.b||res.err||'').substring(0,80)}`);
+        }
+        await sleep(5000);
+      }
       await Promise.race([
-        page.waitForNavigation({ timeout: 15000, waitUntil: 'domcontentloaded' }).catch(() => null),
-        page.waitForNetworkIdle({ timeout: 15000, idleTime: 2000 }).catch(() => null)
+        page.waitForNavigation({ timeout: 10000, waitUntil: 'domcontentloaded' }).catch(() => null),
+        page.waitForNetworkIdle({ timeout: 10000, idleTime: 2000 }).catch(() => null)
       ]).catch(() => null);
       await sleep(2000);
-      console.log(`  URL après auth: ${page.url()}`);
 
       // Naviguer vers la page promos propre
       await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
       await sleep(5000);
-      await shot('6_promos_page');
       const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 200) || '').catch(() => '');
       const loggedIn = !pageText.includes('Inscription') && !pageText.includes('Connexion');
       console.log(`  Connecté: ${loggedIn ? 'OUI' : 'NON'}`);

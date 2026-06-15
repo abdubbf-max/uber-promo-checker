@@ -230,14 +230,22 @@ async function checkAccount(email, password, totpKey) {
     }
     if (!pwdInput) throw new Error(`Champ mot de passe introuvable (URL: ${page.url()})`);
 
-    await pwdInput.click({ clickCount: 3 });
-    await pwdInput.type(password, { delay: 50 });
+    // Taper le mot de passe — la navigation peut détruire le contexte, c'est normal
+    try {
+      await pwdInput.click({ clickCount: 3 });
+      await pwdInput.type(password, { delay: 50 });
+    } catch (_) {
+      // Si le contexte est détruit pendant la frappe, tenter via clavier global
+      await page.keyboard.type(password, { delay: 50 }).catch(() => {});
+    }
     await sleep(300);
-    await page.keyboard.press('Enter');
-    console.log('  Mot de passe soumis (Enter)...');
-    await sleep(4000);
-    await shot('4_after_password');
-    await logPage('4-after-password');
+    await page.keyboard.press('Enter').catch(() => {});
+    console.log('  Mot de passe soumis, attente navigation...');
+
+    // Attendre la navigation (login réussi = Uber redirige vers ubereats.com)
+    await page.waitForNavigation({ timeout: 15000, waitUntil: 'domcontentloaded' }).catch(() => {});
+    await sleep(2000);
+    await shot('5_after_login').catch(() => {});
 
     // Étape TOTP si nécessaire
     if (totpKey) {

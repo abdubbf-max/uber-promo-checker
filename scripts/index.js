@@ -46,6 +46,14 @@ async function checkAccount(email, password, totpKey) {
   const capturedEps    = [];
 
   page.on('response', async (resp) => {
+    const sc = resp.headers()['set-cookie'];
+    if (sc && resp.url().includes('uber')) {
+      const names = (sc.match(/[\w.-]+(?==)/g) || []).slice(0, 5);
+      if (names.length) console.log(`  [Cookie] ${resp.url().replace(/^https?:\/\//, '').substring(0, 50)}: ${names.join(', ')}`);
+    }
+  });
+
+  page.on('response', async (resp) => {
     const url = resp.url();
     if (!url.includes('/_p/api/')) return;
     try {
@@ -305,16 +313,20 @@ async function checkAccount(email, password, totpKey) {
       { timeout: 20000 }
     ).catch(() => {});
 
-    // Si l'URL contient encore _sid, attendre le redirect final (échange de cookie JS)
+    // Si l'URL contient _sid, attendre l'échange de session (redirect HTTP ou network idle)
     if (page.url().includes('_sid=')) {
-      console.log('  Attente échange _sid cookie...');
-      await page.waitForFunction(
-        () => !window.location.search.includes('_sid'),
-        { timeout: 12000 }
-      ).catch(() => {});
-      await sleep(2000);
+      console.log(`  _sid présent: attente échange session...`);
+      await Promise.race([
+        page.waitForNavigation({ timeout: 20000, waitUntil: 'domcontentloaded' }).catch(() => null),
+        page.waitForNetworkIdle({ timeout: 20000, idleTime: 2000 }).catch(() => null)
+      ]).catch(() => null);
+      await sleep(3000);
     }
-    console.log(`  URL finale: ${page.url()}`);
+    const urlFin = page.url();
+    const allCookies = await page.cookies().catch(() => []);
+    const sidCookie = allCookies.find(c => c.name === 'sid' || c.name === 'SID');
+    console.log(`  URL finale: ${urlFin}`);
+    console.log(`  Cookie sid: ${sidCookie ? 'OUI (' + sidCookie.domain + ')' : 'NON'} | Total cookies: ${allCookies.length}`);
 
     // Si pas encore sur ubereats, naviguer manuellement
     if (!page.url().includes('ubereats.com')) {

@@ -156,12 +156,29 @@ async function checkAccount(email, password, totpKey) {
     await shot('2_after_email');
     await logPage('2-after-email');
 
-    // Si page de choix de méthode : cliquer "mot de passe"
+    // Uber affiche souvent un OTP email avec "More options" → il faut cliquer pour accéder au mot de passe
+    const hasOTP = await page.evaluate(() =>
+      !!document.querySelector('[id*="EMAIL_OTP"], [id*="OTP_CODE"]')
+    );
+    if (hasOTP) {
+      console.log('  Page OTP email détectée -> clic "More options"');
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find(b =>
+          /more options|plus d.options|autres options/i.test(b.textContent || '')
+        );
+        if (btn) btn.click();
+      });
+      await sleep(2000);
+      await shot('3_more_options');
+      await logPage('3-more-options');
+    }
+
+    // Chercher et cliquer "mot de passe" / "password" dans la liste d'options
     const clickedPasswordOption = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"]')];
+      const all = [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"],div[tabindex]')];
       const btn = all.find(el => {
         const t = (el.textContent || '').toLowerCase();
-        return t.includes('mot de passe') || t.includes('password') || t.includes('use password');
+        return t.includes('mot de passe') || t.includes('password') || t.includes('use password') || t.includes('sign in with password');
       });
       if (btn) { btn.click(); return (btn.textContent || '').trim(); }
       return null;
@@ -169,8 +186,8 @@ async function checkAccount(email, password, totpKey) {
     if (clickedPasswordOption) {
       console.log(`  Option cliquée: "${clickedPasswordOption}"`);
       await sleep(2500);
-      await shot('3_after_pwd_choice');
-      await logPage('3-after-pwd-choice');
+      await shot('4_after_pwd_choice');
+      await logPage('4-after-pwd-choice');
     }
 
     // Attendre le champ mot de passe

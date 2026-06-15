@@ -140,7 +140,8 @@ async function checkAccount(email, password, totpKey, cookies) {
       // Injecter cookies Cloudflare/device avant login (bypasse le bot-check CDN)
       if (process.env.CF_BASE_COOKIES) {
         try {
-          const base = JSON.parse(process.env.CF_BASE_COOKIES);
+          const cfRaw = process.env.CF_BASE_COOKIES.replace(/^﻿/, '').trim();
+          const base = JSON.parse(cfRaw);
           for (const c of base) await page.setCookie(c).catch(() => {});
           console.log(`  CF cookies injectés: ${base.length}`);
         } catch (e) { console.log(`  CF_BASE_COOKIES erreur: ${e.message}`); }

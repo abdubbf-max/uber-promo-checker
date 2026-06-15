@@ -284,7 +284,12 @@ async function checkAccount(email, password, totpKey) {
     } else if (!page.url().includes('/promotions')) {
       await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
     }
-    await sleep(5000);
+    await sleep(8000);
+    await shot('6_promos_page');
+
+    // Log page content for debug
+    const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '').catch(() => '');
+    console.log(`  Page content (500 chars): ${pageText.replace(/\n/g, ' ').substring(0, 300)}`);
 
     // Scraping DOM
     const domPromos = await page.evaluate(() => {

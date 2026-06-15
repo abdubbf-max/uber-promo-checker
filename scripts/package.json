@@ -4,6 +4,8 @@
   "main": "index.js",
   "dependencies": {
     "puppeteer": "^22.4.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "otpauth": "^9.3.4"
   }
 }

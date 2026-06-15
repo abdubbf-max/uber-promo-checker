@@ -39,6 +39,11 @@ async function checkAccount(email, password, totpKey) {
     timeout: 60000
   });
   const page = await browser.newPage();
+  // Masquer navigator.webdriver pour passer la détection bot d'Uber
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {}, app: {} };
+  });
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
   await page.setViewport({ width: 1280, height: 800 });
 

@@ -182,23 +182,42 @@ async function checkAccount(email, password, totpKey) {
       await logPage('3-after-more-options');
     }
 
-    // Chercher "password" dans les options apparues
-    const clickedPasswordOption = await page.evaluateHandle(() =>
-      [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"],div[tabindex]')].find(el => {
-        const t = (el.textContent || '').toLowerCase();
-        return t.includes('mot de passe') || t.includes('password') || t.includes('use password') || t.includes('sign in with password');
-      })
-    );
-    const pwdOptBox = await clickedPasswordOption.boundingBox().catch(() => null);
-    if (pwdOptBox) {
-      const label = await page.evaluate(el => el?.textContent?.trim(), clickedPasswordOption);
-      console.log(`  Option cliquée: "${label}"`);
-      await page.mouse.click(pwdOptBox.x + pwdOptBox.width / 2, pwdOptBox.y + pwdOptBox.height / 2);
+    // Chercher le bouton "Password" exact (pas un conteneur) dans le menu ouvert
+    const clickPwdBtn = async () => {
+      return page.evaluateHandle(() => {
+        const btns = [...document.querySelectorAll('button,[role="button"]')];
+        // Chercher un bouton dont le texte est EXACTEMENT "password" ou "login with password"
+        return btns.find(el => {
+          const t = (el.textContent || '').trim().toLowerCase();
+          return (t === 'password' || t === 'login with password' || t === 'use password'
+                  || t === 'sign in with password' || t === 'mot de passe')
+                 && el.children.length < 5; // pas un conteneur
+        }) || null;
+      });
+    };
+
+    let pwdBtn = await clickPwdBtn();
+    let pwdBtnBox = await pwdBtn.boundingBox().catch(() => null);
+    if (pwdBtnBox) {
+      const label = await page.evaluate(el => el?.textContent?.trim(), pwdBtn);
+      console.log(`  Bouton password exact: "${label}"`);
+      await page.mouse.click(pwdBtnBox.x + pwdBtnBox.width / 2, pwdBtnBox.y + pwdBtnBox.height / 2);
       await sleep(2500);
       await shot('4_after_pwd_choice');
       await logPage('4-after-pwd-choice');
+      // Si encore un bouton "Login with password" apparaît, cliquer
+      const btn2 = await clickPwdBtn();
+      const box2 = await btn2.boundingBox().catch(() => null);
+      if (box2) {
+        const l2 = await page.evaluate(el => el?.textContent?.trim(), btn2);
+        console.log(`  2e bouton password: "${l2}"`);
+        await page.mouse.click(box2.x + box2.width / 2, box2.y + box2.height / 2);
+        await sleep(2000);
+        await shot('5_after_pwd2');
+        await logPage('5-after-pwd2');
+      }
     } else {
-      console.log('  Aucune option password trouvée après More options');
+      console.log('  Aucun bouton password exact trouvé');
     }
 
     // Attendre le champ mot de passe

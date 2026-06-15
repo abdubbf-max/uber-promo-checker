@@ -137,6 +137,15 @@ async function checkAccount(email, password, totpKey, cookies) {
     else {
       if (!password) throw new Error('Ni cookies ni password fournis');
 
+      // Injecter cookies Cloudflare/device avant login (bypasse le bot-check CDN)
+      if (process.env.CF_BASE_COOKIES) {
+        try {
+          const base = JSON.parse(process.env.CF_BASE_COOKIES);
+          for (const c of base) await page.setCookie(c).catch(() => {});
+          console.log(`  CF cookies injectés: ${base.length}`);
+        } catch (e) { console.log(`  CF_BASE_COOKIES erreur: ${e.message}`); }
+      }
+
       const logPage = async (step) => {
         const url = page.url();
         const btns = await page.evaluate(() =>

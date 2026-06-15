@@ -31,6 +31,7 @@ jobs:
         run: node index.js
         env:
           ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
+          CF_BASE_COOKIES: ${{ secrets.CF_BASE_COOKIES }}
 
       - name: Commit results
         run: |

@@ -1,38 +1,40 @@
 {
   "jonleemarqrobanmg@hotmail.com": {
-    "ok": true,
+    "ok": false,
     "promos": [],
-    "checkedAt": "2026-06-15T13:22:08.894Z"
+    "error": "Execution context was destroyed, most likely because of a navigation.",
+    "checkedAt": "2026-06-15T13:30:46.298Z"
   },
   "ScorgieFreitas82@outlook.com": {
     "ok": true,
     "promos": [],
-    "checkedAt": "2026-06-15T13:22:56.365Z"
+    "checkedAt": "2026-06-15T13:31:36.831Z"
   },
   "HelairePapale3987@outlook.com": {
     "ok": true,
     "promos": [],
-    "checkedAt": "2026-06-15T13:23:43.619Z"
+    "checkedAt": "2026-06-15T13:32:27.376Z"
   },
   "FalettiMiranda845@outlook.com": {
     "ok": true,
     "promos": [],
-    "checkedAt": "2026-06-15T13:24:31.099Z"
+    "checkedAt": "2026-06-15T13:33:17.742Z"
   },
   "MadockVillard3124@outlook.com": {
-    "ok": true,
+    "ok": false,
     "promos": [],
-    "checkedAt": "2026-06-15T13:25:18.214Z"
+    "error": "Execution context was destroyed, most likely because of a navigation.",
+    "checkedAt": "2026-06-15T13:33:56.282Z"
   },
   "SleethGriswold12@outlook.com": {
     "ok": false,
     "promos": [],
     "error": "Execution context was destroyed, most likely because of a navigation.",
-    "checkedAt": "2026-06-15T13:25:56.629Z"
+    "checkedAt": "2026-06-15T13:34:35.124Z"
   },
   "OrneMega29@outlook.com": {
     "ok": true,
     "promos": [],
-    "checkedAt": "2026-06-15T13:26:43.743Z"
+    "checkedAt": "2026-06-15T13:35:25.302Z"
   }
 }

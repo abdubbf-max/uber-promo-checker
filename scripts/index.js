@@ -118,16 +118,33 @@ async function checkAccount(email, password, totpKey) {
     await emailInput.type(email, { delay: 50 });
     await sleep(500);
     await clickContinue(page);
-    console.log('  Email soumis, attente page mot de passe...');
-
-    // Attendre navigation vers page mot de passe
-    await page.waitForFunction(
-      () => document.querySelector('input[type="password"]') !== null
-         || window.location.href.includes('password'),
-      { timeout: 15000 }
-    ).catch(() => {});
-    await sleep(1500);
+    console.log('  Email soumis, attente...');
+    await sleep(3000);
     console.log(`  URL apres email: ${page.url()}`);
+
+    // Uber peut afficher une page de choix de méthode (mot de passe / magic link / etc.)
+    // Chercher et cliquer sur "Continuer avec mot de passe" ou équivalent
+    const clickedPasswordOption = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('button,a,[role="button"]')];
+      const btn = all.find(el => {
+        const t = (el.textContent || '').toLowerCase();
+        return t.includes('mot de passe') || t.includes('password') || t.includes('continuer avec') || t.includes('use password');
+      });
+      if (btn) { btn.click(); return true; }
+      return false;
+    });
+    if (clickedPasswordOption) {
+      console.log('  Option "mot de passe" cliquée');
+      await sleep(2500);
+      console.log(`  URL apres choix: ${page.url()}`);
+    }
+
+    // Attendre le champ mot de passe
+    await page.waitForFunction(
+      () => document.querySelector('input[type="password"]') !== null,
+      { timeout: 12000 }
+    ).catch(() => {});
+    await sleep(1000);
 
     // Étape mot de passe
     const pwdSelectors = [

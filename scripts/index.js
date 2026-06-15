@@ -304,6 +304,16 @@ async function checkAccount(email, password, totpKey) {
       () => window.location.hostname.includes('ubereats.com'),
       { timeout: 20000 }
     ).catch(() => {});
+
+    // Si l'URL contient encore _sid, attendre le redirect final (échange de cookie JS)
+    if (page.url().includes('_sid=')) {
+      console.log('  Attente échange _sid cookie...');
+      await page.waitForFunction(
+        () => !window.location.search.includes('_sid'),
+        { timeout: 12000 }
+      ).catch(() => {});
+      await sleep(2000);
+    }
     console.log(`  URL finale: ${page.url()}`);
 
     // Si pas encore sur ubereats, naviguer manuellement

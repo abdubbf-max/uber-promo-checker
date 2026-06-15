@@ -1,29 +1,52 @@
 @echo off
 cd /d "%~dp0"
-echo === Verification des promos UberEats ===
+echo =====================================
+echo   UberEats Promo Checker
+echo =====================================
 echo.
 
-cd scripts
-if not exist node_modules (
-    echo Installation des dependances...
-    npm install
-)
-cd ..
-
-echo Lancement du checker...
-node scripts/index.js
+:: Verifier si Node.js est installe
+node -v >nul 2>&1
 if errorlevel 1 (
-    echo ERREUR lors de l'execution du script
+    echo ERREUR: Node.js n'est pas installe !
+    echo Telecharge-le sur https://nodejs.org
     pause
     exit /b 1
 )
 
+:: Installer les dependances si necessaire
+if not exist "scripts\node_modules" (
+    echo Installation des dependances...
+    cd scripts
+    npm install
+    cd ..
+    echo.
+)
+
+:: Demarrer le serveur de sync en arriere-plan (si pas deja actif)
+echo Demarrage du serveur sync (port 3001)...
+powershell -Command "try { Invoke-WebRequest http://127.0.0.1:3001/ping -TimeoutSec 1 | Out-Null; Write-Host 'Serveur deja actif.' } catch { Start-Process node -ArgumentList 'server.js' -WindowStyle Hidden }"
+timeout /t 2 /nobreak >nul
+
+:: Lancer le checker
 echo.
-echo Push vers GitHub...
+echo Verification des promos en cours...
+node scripts\index.js
+if errorlevel 1 (
+    echo.
+    echo ERREUR lors de la verification des promos.
+    pause
+    exit /b 1
+)
+
+:: Push vers GitHub
+echo.
+echo Mise a jour de GitHub...
 git add promos.json
 git diff --staged --quiet
 if errorlevel 1 (
     git commit -m "promos: update %date% %time%"
+    git pull --rebase origin main
     git push origin main
     echo Promos mis a jour sur GitHub!
 ) else (
@@ -31,4 +54,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo === Termine! ===
+echo =====================================
+echo   Termine!
+echo =====================================

@@ -71,9 +71,14 @@ async function checkAccount(email, password, totpKey, cookies) {
       const ep = url.split('/_p/api/')[1]?.split('?')[0] || '';
       capturedEps.push(ep);
       const d = body.data;
+      // Log structure pour diagnostic
+      const dKeys = Object.keys(d || {});
+      if (dKeys.length) console.log(`  [${ep}] keys: ${dKeys.slice(0,8).join(', ')}`);
       const fields = ['offers','activeOffers','vouchers','coupons','promotions','items',
                       'rewards','userOffers','eatsOffers','discounts','userRewards',
-                      'promos','deals','incentives','eatsPromotions','userPromotions'];
+                      'promos','deals','incentives','eatsPromotions','userPromotions',
+                      'eaterOffers','eaterPromotions','memberOffers','specialOffers',
+                      'promotionFeed','offerFeed','incentiveFeed','userIncentives'];
       for (const f of fields) {
         if (!Array.isArray(d[f]) || !d[f].length) continue;
         for (const it of d[f]) {

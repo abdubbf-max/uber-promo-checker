@@ -216,12 +216,27 @@ async function checkAccount(email, password, totpKey) {
     ).catch(() => {});
     await sleep(500);
 
-    // Étape mot de passe
+    // Étape mot de passe — le formulaire peut avoir un champ email + password
+    // S'assurer que le champ email est rempli
+    const emailFieldOnPwd = await page.$('input[type="email"], input[name="email"], input[id="username"]');
+    if (emailFieldOnPwd) {
+      const currentVal = await page.evaluate(el => el.value, emailFieldOnPwd);
+      if (!currentVal || currentVal.trim() === '') {
+        console.log('  Email vide sur formulaire password -> remplissage');
+        await emailFieldOnPwd.click({ clickCount: 3 });
+        await emailFieldOnPwd.type(email, { delay: 40 });
+        await sleep(300);
+      } else {
+        console.log(`  Email déjà rempli: ${currentVal.substring(0, 20)}...`);
+      }
+    }
+
     const pwdSelectors = [
       'input[type="password"]',
       'input[name="password"]',
       'input[autocomplete="current-password"]',
       'input[id*="password"]',
+      'input[id="PASSWORD"]',
     ];
     let pwdInput = null;
     for (const sel of pwdSelectors) {

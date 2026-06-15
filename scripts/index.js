@@ -156,38 +156,49 @@ async function checkAccount(email, password, totpKey) {
     await shot('2_after_email');
     await logPage('2-after-email');
 
-    // Uber affiche souvent un OTP email avec "More options" → il faut cliquer pour accéder au mot de passe
+    // Uber affiche une page OTP email → cliquer "More options" via coordonnées réelles
     const hasOTP = await page.evaluate(() =>
       !!document.querySelector('[id*="EMAIL_OTP"], [id*="OTP_CODE"]')
     );
     if (hasOTP) {
-      console.log('  Page OTP email détectée -> clic "More options"');
-      await page.evaluate(() => {
-        const btn = [...document.querySelectorAll('button')].find(b =>
+      console.log('  Page OTP email détectée -> clic "More options" (coordonnées)');
+      const clicked = await page.evaluateHandle(() =>
+        [...document.querySelectorAll('button')].find(b =>
           /more options|plus d.options|autres options/i.test(b.textContent || '')
-        );
-        if (btn) btn.click();
-      });
-      await sleep(2000);
-      await shot('3_more_options');
-      await logPage('3-more-options');
+        )
+      );
+      const box = await clicked.boundingBox().catch(() => null);
+      if (box) {
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        console.log(`  Clic coordonnées: (${Math.round(box.x + box.width/2)}, ${Math.round(box.y + box.height/2)})`);
+      } else {
+        console.log('  BoundingBox null, tentative tap clavier Tab+Enter');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Enter');
+      }
+      await sleep(2500);
+      await shot('3_after_more_options');
+      await logPage('3-after-more-options');
     }
 
-    // Chercher et cliquer "mot de passe" / "password" dans la liste d'options
-    const clickedPasswordOption = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"],div[tabindex]')];
-      const btn = all.find(el => {
+    // Chercher "password" dans les options apparues
+    const clickedPasswordOption = await page.evaluateHandle(() =>
+      [...document.querySelectorAll('button,a,[role="button"],li,[role="listitem"],div[tabindex]')].find(el => {
         const t = (el.textContent || '').toLowerCase();
         return t.includes('mot de passe') || t.includes('password') || t.includes('use password') || t.includes('sign in with password');
-      });
-      if (btn) { btn.click(); return (btn.textContent || '').trim(); }
-      return null;
-    });
-    if (clickedPasswordOption) {
-      console.log(`  Option cliquée: "${clickedPasswordOption}"`);
+      })
+    );
+    const pwdOptBox = await clickedPasswordOption.boundingBox().catch(() => null);
+    if (pwdOptBox) {
+      const label = await page.evaluate(el => el?.textContent?.trim(), clickedPasswordOption);
+      console.log(`  Option cliquée: "${label}"`);
+      await page.mouse.click(pwdOptBox.x + pwdOptBox.width / 2, pwdOptBox.y + pwdOptBox.height / 2);
       await sleep(2500);
       await shot('4_after_pwd_choice');
       await logPage('4-after-pwd-choice');
+    } else {
+      console.log('  Aucune option password trouvée après More options');
     }
 
     // Attendre le champ mot de passe

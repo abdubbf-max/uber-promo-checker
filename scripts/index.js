@@ -58,10 +58,16 @@ async function checkAccount(email, password, totpKey) {
         console.log(`  verifySession ${resp.status()} loc=${loc.substring(0, 80)} body=${body.substring(0, 100)}`);
       } catch (_) {}
     }
-    // Log statuts des API ubereats
+    // Log statuts des API ubereats + body pour session et commandes
     if (url.includes('ubereats.com/_p/api/')) {
       const ep = url.split('/_p/api/')[1]?.split('?')[0] || '';
       console.log(`  [API ${resp.status()}] ${ep}`);
+      if (ep === 'getOrderEntitiesV1' || ep === 'getSessionElapseV1') {
+        try {
+          const b = await resp.json().catch(() => null);
+          if (b) console.log(`  [BODY ${ep}] ${JSON.stringify(b).substring(0, 200)}`);
+        } catch (_) {}
+      }
     }
   });
 
@@ -337,29 +343,39 @@ async function checkAccount(email, password, totpKey) {
       ]).catch(() => null);
       await sleep(2000);
 
-      // Tester l'API promos directement avec _sid comme Bearer token
-      if (sidToken) {
-        const apiTest = await page.evaluate(async (sid) => {
+      // Tester plusieurs endpoints promos avec les cookies du navigateur
+      const apiTests = await page.evaluate(async () => {
+        const eps = ['getEaterOffersV1','getEaterIncentivesV1','getUserOffersV1','getOfferFeedV1','getVouchersV1'];
+        const results = [];
+        for (const ep of eps) {
           try {
-            const r = await fetch('https://www.ubereats.com/_p/api/getPromotionsV1?localeCode=fr-FR', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json', 'x-csrf-token': 'x', 'Authorization': `Bearer ${sid}` },
+            const r = await fetch(`https://www.ubereats.com/_p/api/${ep}?localeCode=fr-FR`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json', 'x-csrf-token': 'x' },
               body: '{}'
             });
             const txt = await r.text();
-            return `${r.status}: ${txt.substring(0, 150)}`;
-          } catch (e) { return `ERR: ${e.message}`; }
-        }, sidToken);
-        console.log(`  API direct avec _sid: ${apiTest}`);
-      }
+            results.push(`${ep}:${r.status}=${txt.substring(0, 60)}`);
+          } catch (e) { results.push(`${ep}:ERR`); }
+        }
+        return results;
+      });
+      console.log(`  Endpoints testés: ${JSON.stringify(apiTests)}`);
     }
     const urlFin = page.url();
     const allCookies = await page.cookies().catch(() => []);
     const jwtCookie = allCookies.find(c => c.name === 'jwt-session');
+    // Décoder le JWT sans logger la valeur complète
+    if (jwtCookie?.value) {
+      try {
+        const parts = jwtCookie.value.split('.');
+        if (parts.length >= 2) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          console.log(`  jwt-session claims: sub=${payload.sub||'none'} userId=${payload.userId||payload.user_id||'none'} exp=${payload.exp||'none'}`);
+        }
+      } catch (_) { console.log(`  jwt-session: non-JWT`); }
+    } else { console.log(`  jwt-session: NON`); }
     console.log(`  URL après _sid wait: ${urlFin}`);
-    console.log(`  jwt-session: ${jwtCookie ? jwtCookie.value.substring(0, 60) + '...' : 'NON'}`);
-    console.log(`  Total cookies: ${allCookies.length}`);
 
     // Forcer navigation propre vers /fr/promotions (sans _sid) pour que le SPA charge en état auth
     await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });

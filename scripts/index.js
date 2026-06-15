@@ -48,10 +48,20 @@ async function checkAccount(email, password, totpKey) {
   const capturedEps    = [];
 
   page.on('response', async (resp) => {
-    const sc = resp.headers()['set-cookie'];
-    if (sc && resp.url().includes('uber')) {
-      const names = (sc.match(/[\w.-]+(?==)/g) || []).slice(0, 5);
-      if (names.length) console.log(`  [Cookie] ${resp.url().replace(/^https?:\/\//, '').substring(0, 50)}: ${names.join(', ')}`);
+    const url = resp.url();
+    // Capturer le body de verifySession pour voir s'il contient un token
+    if (url.includes('verifySession')) {
+      try {
+        const body = await resp.text().catch(() => '');
+        // Chercher un token dans le body ou headers
+        const loc = resp.headers()['location'] || '';
+        console.log(`  verifySession ${resp.status()} loc=${loc.substring(0, 80)} body=${body.substring(0, 100)}`);
+      } catch (_) {}
+    }
+    // Log statuts des API ubereats
+    if (url.includes('ubereats.com/_p/api/')) {
+      const ep = url.split('/_p/api/')[1]?.split('?')[0] || '';
+      console.log(`  [API ${resp.status()}] ${ep}`);
     }
   });
 
@@ -315,19 +325,41 @@ async function checkAccount(email, password, totpKey) {
       { timeout: 20000 }
     ).catch(() => {});
 
-    // Si l'URL contient _sid, attendre l'échange de session (redirect HTTP ou network idle)
+    // Si l'URL contient _sid, tenter l'échange puis appel API direct avec le token
     if (page.url().includes('_sid=')) {
-      console.log(`  _sid présent: attente échange session...`);
+      const sidToken = new URL(page.url()).searchParams.get('_sid');
+      console.log(`  _sid: ${sidToken ? sidToken.substring(0, 40) + '...' : 'null'}`);
+
+      // Attente réseau pour laisser la SPA tenter l'échange
       await Promise.race([
-        page.waitForNavigation({ timeout: 20000, waitUntil: 'domcontentloaded' }).catch(() => null),
-        page.waitForNetworkIdle({ timeout: 20000, idleTime: 2000 }).catch(() => null)
+        page.waitForNavigation({ timeout: 15000, waitUntil: 'domcontentloaded' }).catch(() => null),
+        page.waitForNetworkIdle({ timeout: 15000, idleTime: 2000 }).catch(() => null)
       ]).catch(() => null);
-      await sleep(3000);
+      await sleep(2000);
+
+      // Tester l'API promos directement avec _sid comme Bearer token
+      if (sidToken) {
+        const apiTest = await page.evaluate(async (sid) => {
+          try {
+            const r = await fetch('https://www.ubereats.com/_p/api/getPromotionsV1?localeCode=fr-FR', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json', 'x-csrf-token': 'x', 'Authorization': `Bearer ${sid}` },
+              body: '{}'
+            });
+            const txt = await r.text();
+            return `${r.status}: ${txt.substring(0, 150)}`;
+          } catch (e) { return `ERR: ${e.message}`; }
+        }, sidToken);
+        console.log(`  API direct avec _sid: ${apiTest}`);
+      }
     }
     const urlFin = page.url();
     const allCookies = await page.cookies().catch(() => []);
+    const jwtCookie = allCookies.find(c => c.name === 'jwt-session');
     console.log(`  URL après _sid wait: ${urlFin}`);
-    console.log(`  Cookies (${allCookies.length}): ${allCookies.map(c => `${c.name}=${c.value.substring(0,30)}`).join(' | ').substring(0, 400)}`);
+    console.log(`  jwt-session: ${jwtCookie ? jwtCookie.value.substring(0, 60) + '...' : 'NON'}`);
+    console.log(`  Total cookies: ${allCookies.length}`);
 
     // Forcer navigation propre vers /fr/promotions (sans _sid) pour que le SPA charge en état auth
     await page.goto('https://www.ubereats.com/fr/promotions', { waitUntil: 'networkidle2', timeout: 30000 });
